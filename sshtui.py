@@ -117,13 +117,13 @@ def parse_address(address):
 
 def run_ssh_copy_id(user, hostname, port):
     target = f"{user}@{hostname}" if user else hostname
-    cmd = ["ssh-copy-id", "-i", PUB_KEY_PATH]
+    cmd = ["ssh-copy-id", "-i", PUB_KEY_PATH, "-o", "ConnectTimeout=10"]
     if port:
         cmd += ["-p", port]
     cmd.append(target)
     # Inherits the real terminal so ssh-copy-id can prompt for the password itself.
     result = subprocess.run(cmd)
-    return result.returncode == 0
+    return result.returncode
 
 
 # ---------------------------------------------------------------------------
@@ -163,21 +163,84 @@ def menu(stdscr, title, options, footer="Up/Down to move, Enter to select, q to 
 
 
 def text_input(stdscr, prompt, y=2):
+    """Returns the entered text, or None if the user pressed Esc to go back."""
     curses.curs_set(1)
-    curses.echo()
     stdscr.erase()
     safe_addstr(stdscr, 0, 2, prompt, curses.A_BOLD)
+    h, _ = stdscr.getmaxyx()
+    safe_addstr(stdscr, h - 1, 2, "Enter to submit, Esc to go back", curses.A_DIM)
     safe_addstr(stdscr, y, 2, "> ")
     stdscr.refresh()
     win = curses.newwin(1, curses.COLS - 6, y, 4)
-    win.refresh()
-    try:
-        value = win.getstr().decode("utf-8", errors="ignore")
-    except Exception:
-        value = ""
-    curses.noecho()
+    win.keypad(True)
+    value = ""
+    while True:
+        win.erase()
+        try:
+            win.addstr(0, 0, value[: curses.COLS - 7])
+        except curses.error:
+            pass
+        win.refresh()
+        key = win.getch()
+        if key in (curses.KEY_ENTER, 10, 13):
+            break
+        elif key == 27:  # Esc
+            curses.curs_set(0)
+            return None
+        elif key in (curses.KEY_BACKSPACE, 127, 8):
+            value = value[:-1]
+        elif 0 <= key < 256:
+            ch = chr(key)
+            if ch.isprintable():
+                value += ch
     curses.curs_set(0)
     return value.strip()
+
+
+def search_menu(stdscr, title, items, display_fn,
+                 footer="Type to search, Up/Down to move, Enter to select, Esc to go back"):
+    """Interactive filter-as-you-type picker. Returns the selected item, or None
+    if the user went back (Esc) without selecting anything."""
+    query = ""
+    idx = 0
+    curses.curs_set(1)
+    while True:
+        filtered = [it for it in items if query.lower() in display_fn(it).lower()]
+        if idx >= len(filtered):
+            idx = max(0, len(filtered) - 1)
+        stdscr.erase()
+        safe_addstr(stdscr, 0, 2, title, curses.A_BOLD)
+        safe_addstr(stdscr, 1, 2, f"Search: {query}")
+        if not filtered:
+            safe_addstr(stdscr, 3, 4, "(no matches)", curses.A_DIM)
+        for i, it in enumerate(filtered):
+            attr = curses.A_REVERSE if i == idx else 0
+            safe_addstr(stdscr, 3 + i, 4, display_fn(it), attr)
+        h, _ = stdscr.getmaxyx()
+        safe_addstr(stdscr, h - 1, 2, footer, curses.A_DIM)
+        try:
+            stdscr.move(1, min(curses.COLS - 1, 2 + len("Search: ") + len(query)))
+        except curses.error:
+            pass
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in (curses.KEY_UP, curses.KEY_BTAB):
+            idx = (idx - 1) % len(filtered) if filtered else 0
+        elif key == curses.KEY_DOWN:
+            idx = (idx + 1) % len(filtered) if filtered else 0
+        elif key in (curses.KEY_ENTER, 10, 13):
+            if filtered:
+                curses.curs_set(0)
+                return filtered[idx]
+        elif key == 27:  # Esc
+            curses.curs_set(0)
+            return None
+        elif key in (curses.KEY_BACKSPACE, 127, 8):
+            query = query[:-1]
+        elif 0 <= key < 256:
+            ch = chr(key)
+            if ch.isprintable():
+                query += ch
 
 
 def message_screen(stdscr, lines, wait_key=True):
@@ -246,12 +309,13 @@ def screen_add_host(stdscr):
         print("-" * 60)
         return run_ssh_copy_id(user, hostname, port)
 
-    ok = suspend_curses_and_run(stdscr, do_copy)
+    returncode = suspend_curses_and_run(stdscr, do_copy)
 
-    if not ok:
+    if returncode != 0:
+        target = f"{user + '@' if user else ''}{hostname}"
         message_screen(stdscr, [
-            "ssh-copy-id did not succeed (wrong password, host unreachable, etc).",
-            "No entry was added to ~/.ssh/config.",
+            f"Error: unable to connect to '{target}' (timed out after ~10s per attempt, or unreachable).",
+            "Could also be a wrong password. No entry was added to ~/.ssh/config.",
         ])
         return
 
@@ -262,6 +326,13 @@ def screen_add_host(stdscr):
     ])
 
 
+def _host_display(h):
+    target = f"{(h['user'] + '@') if h['user'] else ''}{h['hostname']}"
+    if h["port"]:
+        target += f":{h['port']}"
+    return f"{h['alias']:<20} -> {target}"
+
+
 def screen_list_hosts(stdscr):
     while True:
         hosts = read_hosts()
@@ -269,24 +340,23 @@ def screen_list_hosts(stdscr):
             message_screen(stdscr, ["No aliases found in ~/.ssh/config yet.", "Add one from the main menu first."])
             return
 
-        options = [
-            f"{h['alias']:<20} -> {(h['user'] + '@') if h['user'] else ''}{h['hostname']}" + (f":{h['port']}" if h['port'] else "")
-            for h in hosts
-        ] + ["<- Back"]
-
-        choice = menu(stdscr, "Saved SSH aliases (Enter to connect)", options)
-        if choice is None or choice == len(hosts):
+        chosen = search_menu(stdscr, "Saved SSH aliases (search + Enter to connect)", hosts, _host_display)
+        if chosen is None:
             return
 
-        alias = hosts[choice]["alias"]
+        alias = chosen["alias"]
 
         def do_connect():
-            print(f"Connecting: ssh {alias}")
+            print(f"Connecting: ssh -o ConnectTimeout=10 {alias}")
             print("-" * 60)
-            subprocess.run(["ssh", alias])
+            result = subprocess.run(["ssh", "-o", "ConnectTimeout=10", alias])
+            return result.returncode
 
-        suspend_curses_and_run(stdscr, do_connect)
-        message_screen(stdscr, ["Session ended."])
+        returncode = suspend_curses_and_run(stdscr, do_connect)
+        if returncode == 255:
+            message_screen(stdscr, [f"Error: unable to connect to '{alias}' (timed out after 10s or unreachable)."])
+        else:
+            message_screen(stdscr, ["Session ended."])
 
 
 def main(stdscr):

@@ -35,15 +35,11 @@ python3 ~/sshtui/sshtui.py
 ## One-time setup on a new machine
 
 ```bash
-git clone <your-repo-url> ~/sshtui
-cd ~/sshtui
+git clone <your-repo-url> ~/SSHconfig   # any path is fine
+cd ~/SSHconfig
 ./build_deps.sh                 # checks/installs ssh tooling
-chmod +x sshtui.py build_deps.sh
-mkdir -p ~/.local/bin
-printf '#!/usr/bin/env bash\nexec python3 "$HOME/sshtui/sshtui.py" "$@"\n' > ~/.local/bin/sshtui
-chmod +x ~/.local/bin/sshtui
-# Make sure ~/.local/bin is on PATH (add to ~/.bashrc if not):
-#   export PATH="$HOME/.local/bin:$PATH"
+./install.sh                    # wires up the sshtui alias, wherever this repo lives
 ```
 
-Then run `sshtui` from any terminal.
+`install.sh` creates `~/.local/bin/sshtui`, pointing at this repo's actual location, and
+warns if `~/.local/bin` isn't already on your `PATH`. Then run `sshtui` from any terminal.
