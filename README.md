@@ -23,7 +23,7 @@ Only the Python standard library is used (curses, subprocess, etc.) plus the sys
 After setup (see below), just run:
 
 ```bash
-sshtui
+configssh
 ```
 
 Or directly without the alias:
@@ -40,10 +40,10 @@ cd ~/sshtui
 ./build_deps.sh                 # checks/installs ssh tooling
 chmod +x sshtui.py build_deps.sh
 mkdir -p ~/.local/bin
-printf '#!/usr/bin/env bash\nexec python3 "$HOME/sshtui/sshtui.py" "$@"\n' > ~/.local/bin/sshtui
-chmod +x ~/.local/bin/sshtui
+printf '#!/usr/bin/env bash\nexec python3 "$HOME/sshtui/sshtui.py" "$@"\n' > ~/.local/bin/configssh
+chmod +x ~/.local/bin/configssh
 # Make sure ~/.local/bin is on PATH (add to ~/.bashrc if not):
 #   export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Then run `sshtui` from any terminal.
+Then run `configssh` from any terminal.
