@@ -6,8 +6,15 @@ A small terminal UI for managing SSH host aliases with key-based (passwordless) 
   `~/.ssh/id_ed25519` / `.pub`, runs `ssh-copy-id` so you type your password into its own
   normal prompt (sshtui never sees or stores it), then appends a `Host` block to
   `~/.ssh/config` on success.
-- **List / connect to aliases**: reads `Host` entries from `~/.ssh/config` and lets you
-  pick one to `ssh` into.
+- **List / connect to aliases**: search-as-you-type over saved `Host` entries in
+  `~/.ssh/config`, then Enter to `ssh` in.
+- **Edit an alias**: rename an alias or change its host/user/port after the fact.
+- **Language**: toggle English / 日本語 from the main menu; the choice is remembered.
+
+Each alias gets its own `~/.ssh/known_hosts.d/<alias>` file instead of sharing the global
+`~/.ssh/known_hosts`, so two aliases pointing at the same address (e.g. two vehicles that
+reuse an IP) never collide over a cached host fingerprint. If a saved alias's host key
+changes or isn't trusted yet, sshtui detects it before connecting and offers to fix it.
 
 ## Requirements
 
@@ -35,15 +42,11 @@ python3 ~/sshtui/sshtui.py
 ## One-time setup on a new machine
 
 ```bash
-git clone <your-repo-url> ~/sshtui
-cd ~/sshtui
+git clone <your-repo-url> ~/SSHconfig   # any path is fine
+cd ~/SSHconfig
 ./build_deps.sh                 # checks/installs ssh tooling
-chmod +x sshtui.py build_deps.sh
-mkdir -p ~/.local/bin
-printf '#!/usr/bin/env bash\nexec python3 "$HOME/sshtui/sshtui.py" "$@"\n' > ~/.local/bin/configssh
-chmod +x ~/.local/bin/configssh
-# Make sure ~/.local/bin is on PATH (add to ~/.bashrc if not):
-#   export PATH="$HOME/.local/bin:$PATH"
+./install.sh                    # wires up the configssh command, wherever this repo lives
 ```
 
-Then run `configssh` from any terminal.
+`install.sh` creates `~/.local/bin/configssh`, pointing at this repo's actual location, and
+warns if `~/.local/bin` isn't already on your `PATH`. Then run `configssh` from any terminal.
