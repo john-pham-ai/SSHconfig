@@ -34,7 +34,8 @@ def known_hosts_path(alias):
 
 
 LANG_CONFIG_PATH = os.path.expanduser("~/.config/sshtui/lang")
-LANG_NAMES = {"en": "English", "ja": "日本語"}
+LANG_NAMES = {"en": "English", "ja": "日本語", "both": "English / 日本語"}
+NEXT_LANG = {"en": "ja", "ja": "both", "both": "en"}
 
 STRINGS = {
     "en": {
@@ -153,7 +154,7 @@ def load_lang():
             value = f.read().strip()
     except FileNotFoundError:
         return
-    if value in STRINGS:
+    if value in LANG_NAMES:
         _current_lang = value
 
 
@@ -166,7 +167,10 @@ def save_lang(lang):
 
 
 def t(key, **kwargs):
-    text = STRINGS[_current_lang][key]
+    if _current_lang == "both":
+        text = STRINGS["en"][key] + "\n" + STRINGS["ja"][key]
+    else:
+        text = STRINGS[_current_lang][key]
     return text.format(**kwargs) if kwargs else text
 
 
@@ -358,10 +362,16 @@ def ensure_host_trust(stdscr, alias, hostname):
     else:
         header = [t("hostkey_unknown_1", alias=alias, hostname=hostname), ""]
     stdscr.erase()
-    for i, line in enumerate(header + detail_lines):
-        safe_addstr(stdscr, i, 2, line)
+    row = 0
+    for line in header + detail_lines:
+        for subline in line.split("\n"):
+            safe_addstr(stdscr, row, 2, subline)
+            row += 1
     h, _ = stdscr.getmaxyx()
-    safe_addstr(stdscr, h - 1, 2, t("hostkey_fix_footer"), curses.A_DIM)
+    footer_lines = t("hostkey_fix_footer").split("\n")
+    footer_row = h - len(footer_lines)
+    for i, line in enumerate(footer_lines):
+        safe_addstr(stdscr, footer_row + i, 2, line, curses.A_DIM)
     stdscr.refresh()
     key = stdscr.getch()
     if key not in (ord("y"), ord("Y")):
@@ -400,12 +410,21 @@ def menu(stdscr, title, options, footer=None):
     curses.curs_set(0)
     while True:
         stdscr.erase()
-        safe_addstr(stdscr, 0, 2, title, curses.A_BOLD)
+        title_lines = title.split("\n")
+        for i, line in enumerate(title_lines):
+            safe_addstr(stdscr, i, 2, line, curses.A_BOLD)
+        row = len(title_lines) + 1
         for i, opt in enumerate(options):
             attr = curses.A_REVERSE if i == idx else 0
-            safe_addstr(stdscr, 2 + i, 4, opt, attr)
+            opt_lines = opt.split("\n")
+            for j, line in enumerate(opt_lines):
+                safe_addstr(stdscr, row + j, 4, line, attr)
+            row += len(opt_lines)
         h, _ = stdscr.getmaxyx()
-        safe_addstr(stdscr, h - 1, 2, footer, curses.A_DIM)
+        footer_lines = footer.split("\n")
+        footer_row = h - len(footer_lines)
+        for i, line in enumerate(footer_lines):
+            safe_addstr(stdscr, footer_row + i, 2, line, curses.A_DIM)
         stdscr.refresh()
         key = stdscr.getch()
         if key in (curses.KEY_UP, ord("k")):
@@ -422,9 +441,15 @@ def text_input(stdscr, prompt, y=2):
     """Returns the entered text, or None if the user pressed Esc to go back."""
     curses.curs_set(1)
     stdscr.erase()
-    safe_addstr(stdscr, 0, 2, prompt, curses.A_BOLD)
+    prompt_lines = prompt.split("\n")
+    for i, line in enumerate(prompt_lines):
+        safe_addstr(stdscr, i, 2, line, curses.A_BOLD)
+    y = max(y, len(prompt_lines) + 1)
     h, _ = stdscr.getmaxyx()
-    safe_addstr(stdscr, h - 1, 2, t("input_footer"), curses.A_DIM)
+    footer_lines = t("input_footer").split("\n")
+    footer_row = h - len(footer_lines)
+    for i, line in enumerate(footer_lines):
+        safe_addstr(stdscr, footer_row + i, 2, line, curses.A_DIM)
     safe_addstr(stdscr, y, 2, "> ")
     stdscr.refresh()
     win = curses.newwin(1, curses.COLS - 6, y, 4)
@@ -467,17 +492,24 @@ def search_menu(stdscr, title, items, display_fn, footer=None):
         if idx >= len(filtered):
             idx = max(0, len(filtered) - 1)
         stdscr.erase()
-        safe_addstr(stdscr, 0, 2, title, curses.A_BOLD)
-        safe_addstr(stdscr, 1, 2, f"{search_label}{query}")
+        title_lines = title.split("\n")
+        for i, line in enumerate(title_lines):
+            safe_addstr(stdscr, i, 2, line, curses.A_BOLD)
+        search_row = len(title_lines)
+        safe_addstr(stdscr, search_row, 2, f"{search_label}{query}")
+        list_start = search_row + 2
         if not filtered:
-            safe_addstr(stdscr, 3, 4, t("no_matches"), curses.A_DIM)
+            safe_addstr(stdscr, list_start, 4, t("no_matches"), curses.A_DIM)
         for i, it in enumerate(filtered):
             attr = curses.A_REVERSE if i == idx else 0
-            safe_addstr(stdscr, 3 + i, 4, display_fn(it), attr)
+            safe_addstr(stdscr, list_start + i, 4, display_fn(it), attr)
         h, _ = stdscr.getmaxyx()
-        safe_addstr(stdscr, h - 1, 2, footer, curses.A_DIM)
+        footer_lines = footer.split("\n")
+        footer_row = h - len(footer_lines)
+        for i, line in enumerate(footer_lines):
+            safe_addstr(stdscr, footer_row + i, 2, line, curses.A_DIM)
         try:
-            stdscr.move(1, min(curses.COLS - 1, 2 + len(search_label) + len(query)))
+            stdscr.move(search_row, min(curses.COLS - 1, 2 + len(search_label) + len(query)))
         except curses.error:
             pass
         stdscr.refresh()
@@ -503,11 +535,14 @@ def search_menu(stdscr, title, items, display_fn, footer=None):
 
 def message_screen(stdscr, lines, wait_key=True):
     stdscr.erase()
-    for i, line in enumerate(lines):
-        safe_addstr(stdscr, i, 2, line)
+    row = 0
+    for line in lines:
+        for subline in line.split("\n"):
+            safe_addstr(stdscr, row, 2, subline)
+            row += 1
     if wait_key:
         h, _ = stdscr.getmaxyx()
-        safe_addstr(stdscr, min(h - 1, len(lines) + 1), 2, t("press_any_key"), curses.A_DIM)
+        safe_addstr(stdscr, min(h - 1, row + 1), 2, t("press_any_key"), curses.A_DIM)
         stdscr.refresh()
         stdscr.getch()
     else:
@@ -678,8 +713,7 @@ def main(stdscr):
         elif choice == 2:
             screen_edit_host(stdscr)
         elif choice == 3:
-            other_lang = "ja" if _current_lang == "en" else "en"
-            save_lang(other_lang)
+            save_lang(NEXT_LANG[_current_lang])
 
 
 if __name__ == "__main__":
